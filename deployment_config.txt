@@ -1,0 +1,55 @@
+# render.yaml - Configuración para Render
+services:
+  - type: web
+    name: telegram-multi-publisher-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: WEBHOOK_URL
+        value: https://telegram-multi-publisher-bot.onrender.com
+      - key: PORT
+        value: 10000
+      - key: PYTHON_VERSION
+        value: 3.11.0
+    healthCheckPath: /health
+    numInstances: 1
+    plan: free
+    region: oregon
+    scaling:
+      minInstances: 1
+      maxInstances: 1
+    
+---
+
+# .env (para desarrollo local)
+BOT_TOKEN=tu_bot_token_aqui
+WEBHOOK_URL=https://telegram-multi-publisher-bot.onrender.com
+PORT=10000
+
+---
+
+# runtime.txt (especificar versión de Python)
+python-3.11.0
+
+---
+
+# Procfile (alternativo para algunos deployments)
+web: python bot.py
+
+---
+
+# .gitignore
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv/
+env/
+venv/
+*.log
+.DS_Store
+node_modules/
+.pytest_cache/
