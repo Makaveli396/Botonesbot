@@ -781,7 +781,212 @@ class TelegramBot:
             )
         else:
             await update.message.reply_text("💡 **Usa /nueva para crear una publicación primero**")
+    # Añade estos métodos a tu clase TelegramBot después del método handle_video:
+
+async def handle_animation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja GIFs/animaciones"""
+    user_id = update.effective_user.id
+    data = self.get_user_data(user_id)
     
+    if data.get('current_post'):
+        animation = update.message.animation
+        data['current_post'].add_media(animation.file_id, 'animation')
+        
+        caption = update.message.caption
+        if caption and not data['current_post'].text:
+            data['current_post'].text = caption
+        
+        keyboard = [
+            [InlineKeyboardButton("🔘 Añadir Botones", callback_data="manage_buttons")],
+            [InlineKeyboardButton("👀 Vista Previa", callback_data="preview")]
+        ]
+        
+        await update.message.reply_text(
+            f"🎭 **GIF/Animación añadida**\n\n"
+            f"💡 **Tip:** Los GIFs con botones son muy virales",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text("💡 **Usa /nueva para crear una publicación primero**")
+
+async def handle_audio(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja archivos de audio"""
+    user_id = update.effective_user.id
+    data = self.get_user_data(user_id)
+    
+    if data.get('current_post'):
+        audio = update.message.audio
+        data['current_post'].add_media(audio.file_id, 'audio')
+        
+        keyboard = [
+            [InlineKeyboardButton("🔘 Añadir Botones", callback_data="manage_buttons")],
+            [InlineKeyboardButton("👀 Vista Previa", callback_data="preview")]
+        ]
+        
+        await update.message.reply_text(
+            f"🎵 **Audio añadido**\n\n"
+            f"💡 **Idea:** Añade botones para streaming o descarga",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text("💡 **Usa /nueva para crear una publicación primero**")
+
+async def handle_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja mensajes de voz"""
+    user_id = update.effective_user.id
+    data = self.get_user_data(user_id)
+    
+    if data.get('current_post'):
+        voice = update.message.voice
+        data['current_post'].add_media(voice.file_id, 'voice')
+        
+        keyboard = [
+            [InlineKeyboardButton("🔘 Añadir Botones", callback_data="manage_buttons")],
+            [InlineKeyboardButton("👀 Vista Previa", callback_data="preview")]
+        ]
+        
+        await update.message.reply_text(
+            f"🎤 **Mensaje de voz añadido**\n\n"
+            f"💡 **Sugerencia:** Perfecto para podcasts con botones",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text("💡 **Usa /nueva para crear una publicación primero**")
+
+async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja documentos/archivos"""
+    user_id = update.effective_user.id
+    data = self.get_user_data(user_id)
+    
+    if data.get('current_post'):
+        document = update.message.document
+        data['current_post'].add_media(document.file_id, 'document')
+        
+        caption = update.message.caption
+        if caption and not data['current_post'].text:
+            data['current_post'].text = caption
+        
+        keyboard = [
+            [InlineKeyboardButton("🔘 Añadir Botones", callback_data="manage_buttons")],
+            [InlineKeyboardButton("👀 Vista Previa", callback_data="preview")]
+        ]
+        
+        file_name = document.file_name or "archivo"
+        await update.message.reply_text(
+            f"📄 **Documento añadido**\n\n"
+            f"📁 Archivo: `{file_name}`\n"
+            f"💡 **Idea:** Añade botones de descarga o más info",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text("💡 **Usa /nueva para crear una publicación primero**")
+
+# También necesitas añadir algunos callbacks faltantes en callback_handler:
+
+# Añade estos casos en tu método callback_handler, después de los existentes:
+
+elif callback_data == "add_url_button":
+    data['step'] = 'adding_button_text'
+    await query.edit_message_text(
+        "➕ **Crear Botón con Link**\n\n"
+        "✍️ **Paso 1:** Envía el texto del botón\n\n"
+        "**Ejemplos:**\n"
+        "• `🛒 Comprar Ahora`\n"
+        "• `📞 Contactar`\n"
+        "• `📖 Leer Más`\n\n"
+        "Para cancelar, usa /cancelar"
+    )
+
+elif callback_data == "add_whatsapp_button":
+    await query.edit_message_text(
+        "📞 **Botón de WhatsApp**\n\n"
+        "Envía el número en formato:\n"
+        "`https://wa.me/1234567890`\n\n"
+        "El bot creará un botón automáticamente."
+    )
+
+elif callback_data == "add_telegram_button":
+    await query.edit_message_text(
+        "📺 **Botón de Telegram**\n\n"
+        "Envía el enlace del canal/grupo:\n"
+        "• `https://t.me/mi_canal`\n"
+        "• `@mi_canal`\n\n"
+        "El bot creará el botón automáticamente."
+    )
+
+elif callback_data == "button_templates":
+    await self.show_button_template_selection(query, data)
+
+elif callback_data == "back_to_post":
+    await self.show_post_menu(query, data)
+
+elif callback_data == "new_post_quick":
+    # Redirigir a crear nueva publicación
+    data['current_post'] = MediaPost()
+    data['step'] = 'creating'
+    await self.show_post_menu(query, data)
+
+# Y añade estos métodos auxiliares:
+
+async def show_button_template_selection(self, query, data):
+    """Muestra selección de plantillas de botones"""
+    templates = data.get('button_templates', {})
+    
+    keyboard = []
+    for template_name in templates.keys():
+        keyboard.append([InlineKeyboardButton(
+            f"📋 {template_name.title()}",
+            callback_data=f"template_{template_name}"
+        )])
+    
+    keyboard.append([InlineKeyboardButton("⬅️ Volver", callback_data="manage_buttons")])
+    
+    text = "📋 **Plantillas de Botones**\n\n"
+    for name, buttons in templates.items():
+        text += f"**{name.title()}:**\n"
+        for btn in buttons[:2]:
+            text += f"• {btn['text']}\n"
+        if len(buttons) > 2:
+            text += f"• ... y {len(buttons) - 2} más\n"
+        text += "\n"
+    
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+async def show_post_menu(self, query, data):
+    """Muestra el menú principal de publicación"""
+    post = data.get('current_post')
+    if not post:
+        await query.edit_message_text("❌ No hay publicación activa")
+        return
+    
+    keyboard = [
+        [InlineKeyboardButton("📝 Añadir Texto", callback_data="add_text"),
+         InlineKeyboardButton("🎯 Seleccionar Canales", callback_data="select_channels")],
+        [InlineKeyboardButton("🔘 Gestionar Botones", callback_data="manage_buttons")],
+        [InlineKeyboardButton("👀 Vista Previa", callback_data="preview"),
+         InlineKeyboardButton("📤 Publicar", callback_data="publish")],
+        [InlineKeyboardButton("❌ Cancelar", callback_data="cancel")]
+    ]
+    
+    text = f"🎯 **Nueva Publicación con Botones**\n\n"
+    text += f"📺 Canales disponibles: **{len(data['channels'])}**\n"
+    text += f"🔘 Botones: **{len(post.buttons)}**\n"
+    text += f"📋 Estado: **Creando**\n\n"
+    text += f"**Siguiente paso:** Añade contenido y botones"
+    
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.MARKDOWN
+    )
     # Métodos existentes (añadir canal, gestión, etc.) se mantienen igual
     async def show_channel_selection(self, query, data):
         """Muestra la selección de canales"""
