@@ -43,20 +43,78 @@ class PostButton:
         else:
             return InlineKeyboardButton(self.text, url=self.url or "https://t.me")
 
-class MediaPost:
-    def __init__(self):
-        self.text = ""
-        self.media = []
+class ForwardedPost:
+    """Clase para manejar publicaciones reenviadas"""
+    def __init__(self, original_message):
+        self.original_message = original_message
+        self.text = self.extract_text()
+        self.media = self.extract_media()
         self.target_channels = set()
-        self.buttons = []  # Lista de botones
-        self.button_layout = "horizontal"  # "horizontal", "vertical", "grid"
+        self.buttons = []
+        self.button_layout = "horizontal"
+        self.original_date = original_message.date
+        self.forward_from = self.get_forward_info()
+    
+    def extract_text(self):
+        """Extrae el texto del mensaje original"""
+        if self.original_message.text:
+            return self.original_message.text
+        elif self.original_message.caption:
+            return self.original_message.caption
+        return ""
+    
+    def extract_media(self):
+        """Extrae media del mensaje original"""
+        media = []
         
-    def add_media(self, file_id, media_type, caption=None):
-        self.media.append({
-            'file_id': file_id, 
-            'type': media_type,
-            'caption': caption
-        })
+        if self.original_message.photo:
+            photo = self.original_message.photo[-1]  # Mejor resolución
+            media.append({
+                'file_id': photo.file_id,
+                'type': 'photo'
+            })
+        elif self.original_message.video:
+            media.append({
+                'file_id': self.original_message.video.file_id,
+                'type': 'video'
+            })
+        elif self.original_message.animation:
+            media.append({
+                'file_id': self.original_message.animation.file_id,
+                'type': 'animation'
+            })
+        elif self.original_message.audio:
+            media.append({
+                'file_id': self.original_message.audio.file_id,
+                'type': 'audio'
+            })
+        elif self.original_message.voice:
+            media.append({
+                'file_id': self.original_message.voice.file_id,
+                'type': 'voice'
+            })
+        elif self.original_message.document:
+            media.append({
+                'file_id': self.original_message.document.file_id,
+                'type': 'document'
+            })
+        elif self.original_message.sticker:
+            media.append({
+                'file_id': self.original_message.sticker.file_id,
+                'type': 'sticker'
+            })
+        
+        return media
+    
+    def get_forward_info(self):
+        """Obtiene información del reenvío"""
+        if self.original_message.forward_from:
+            return f"Usuario: {self.original_message.forward_from.first_name}"
+        elif self.original_message.forward_from_chat:
+            return f"Canal: {self.original_message.forward_from_chat.title}"
+        elif self.original_message.forward_sender_name:
+            return f"Cuenta oculta: {self.original_message.forward_sender_name}"
+        return "Mensaje original"
     
     def add_button(self, text, url=None, callback_data=None, button_type='url'):
         """Añade un botón a la publicación"""
@@ -76,7 +134,6 @@ class MediaPost:
         keyboard = []
         
         if self.button_layout == "horizontal":
-            # Todos los botones en una fila (máximo 3 por fila)
             row = []
             for i, button in enumerate(self.buttons):
                 row.append(button.to_telegram_button())
@@ -85,12 +142,10 @@ class MediaPost:
                     row = []
                     
         elif self.button_layout == "vertical":
-            # Un botón por fila
             for button in self.buttons:
                 keyboard.append([button.to_telegram_button()])
                 
         elif self.button_layout == "grid":
-            # Grid 2x2 o 2xN
             row = []
             for i, button in enumerate(self.buttons):
                 row.append(button.to_telegram_button())
@@ -112,22 +167,17 @@ class TelegramBot:
         """Configura manejadores del bot"""
         self.app.add_handler(CommandHandler("start", self.start))
         self.app.add_handler(CommandHandler("help", self.help_cmd))
-        self.app.add_handler(CommandHandler("nueva", self.new_post))
         self.app.add_handler(CommandHandler("canales", self.manage_channels))
         self.app.add_handler(CommandHandler("estado", self.status))
         self.app.add_handler(CommandHandler("cancelar", self.cancel))
         
         self.app.add_handler(CallbackQueryHandler(self.callback_handler))
         
-        # Manejadores de multimedia
-        self.app.add_handler(MessageHandler(filters.PHOTO, self.handle_photo))
-        self.app.add_handler(MessageHandler(filters.VIDEO, self.handle_video))
-        self.app.add_handler(MessageHandler(filters.ANIMATION, self.handle_animation))
-        self.app.add_handler(MessageHandler(filters.AUDIO, self.handle_audio))
-        self.app.add_handler(MessageHandler(filters.VOICE, self.handle_voice))
-        self.app.add_handler(MessageHandler(filters.Document.ALL, self.handle_document))
-        
-        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text))
+        # Manejador PRINCIPAL para mensajes reenviados/cualquiera
+        self.app.add_handler(MessageHandler(
+            filters.ALL & ~filters.COMMAND, 
+            self.handle_forwarded_message
+        ))
     
     def get_user_data(self, user_id):
         """Obtiene datos del usuario"""
@@ -151,19 +201,24 @@ class TelegramBot:
                 {'text': '⭐ Valorar', 'url': 'https://ejemplo.com/review'}
             ],
             'social': [
-                {'text': '👍 Like', 'callback_data': 'like_post'},
+                {'text': '👍 Me Gusta', 'callback_data': 'like_post'},
                 {'text': '💬 Comentar', 'url': 'https://t.me/mi_canal'},
                 {'text': '🔄 Compartir', 'callback_data': 'share_post'}
+            ],
+            'news': [
+                {'text': '📖 Leer Más', 'url': 'https://ejemplo.com/noticia'},
+                {'text': '🔔 Suscribirse', 'url': 'https://t.me/noticias'},
+                {'text': '📤 Compartir', 'callback_data': 'share_news'}
             ],
             'educational': [
                 {'text': '📚 Ver Curso', 'url': 'https://ejemplo.com/curso'},
                 {'text': '🎓 Inscribirse', 'url': 'https://ejemplo.com/registro'},
                 {'text': '💬 Preguntas', 'url': 'https://t.me/soporte'}
             ],
-            'news': [
-                {'text': '📖 Leer Más', 'url': 'https://ejemplo.com/noticia'},
-                {'text': '🔔 Suscribirse', 'url': 'https://t.me/noticias'},
-                {'text': '📤 Compartir', 'callback_data': 'share_news'}
+            'contact': [
+                {'text': '📞 WhatsApp', 'url': 'https://wa.me/1234567890'},
+                {'text': '📧 Email', 'url': 'mailto:contacto@ejemplo.com'},
+                {'text': '🌐 Web', 'url': 'https://ejemplo.com'}
             ]
         }
     
@@ -172,32 +227,38 @@ class TelegramBot:
         user = update.effective_user
         self.get_user_data(user.id)
         
-        text = f"""🚀 **Bot Publicador Multi-Canal con Botones**
+        text = f"""🚀 **Bot Replicador con Botones**
 
 ¡Hola {user.first_name}! 👋
 
-**FUNCIONES PRINCIPALES:**
-• 📝 Crear publicaciones multimedia
-• 🔘 Añadir botones interactivos
-• 📺 Gestionar múltiples canales
-• 🎯 Publicar simultáneamente
+**🔄 FUNCIONALIDAD PRINCIPAL:**
+**Reenvía cualquier publicación al bot** y él te permitirá:
 
-**TIPOS DE BOTONES:**
-• 🔗 Links externos
-• 📞 WhatsApp/Telegram
-• 🛒 Tiendas online
-• 📊 Encuestas y formularios
+• 🔘 **Añadir botones interactivos**
+• 📺 **Replicar en múltiples canales**
+• 🎯 **Personalizar el layout**
+• 📊 **Usar plantillas predefinidas**
+
+**📝 CÓMO USAR:**
+1. **Reenvía** una publicación al bot
+2. El bot la **detecta automáticamente**
+3. **Añade botones** que quieras
+4. **Selecciona canales** destino
+5. **¡Publica con un clic!**
+
+**🔘 TIPOS DE BOTONES:**
+• 🔗 Links externos • 📞 WhatsApp
+• 📺 Telegram • 🛒 E-commerce
 
 **COMANDOS:**
-• /nueva - Nueva publicación
 • /canales - Gestionar canales
 • /help - Ayuda completa
 
-¡Crea contenido interactivo! 🎉"""
+**🎯 ¡Simplemente reenvía y replica!**"""
         
         keyboard = [
-            [KeyboardButton("📝 Nueva Publicación"), KeyboardButton("📺 Mis Canales")],
-            [KeyboardButton("🔘 Plantillas de Botones"), KeyboardButton("❓ Ayuda")]
+            [KeyboardButton("📺 Mis Canales"), KeyboardButton("🔘 Plantillas")],
+            [KeyboardButton("📊 Estado"), KeyboardButton("❓ Ayuda")]
         ]
         
         await update.message.reply_text(
@@ -206,42 +267,100 @@ class TelegramBot:
             parse_mode=ParseMode.MARKDOWN
         )
     
-    async def new_post(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Crear nueva publicación"""
+    async def handle_forwarded_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Maneja CUALQUIER mensaje (reenviado o no) para replicar"""
         user_id = update.effective_user.id
         data = self.get_user_data(user_id)
+        message = update.message
+        
+        # Si está en un paso específico, manejar eso primero
+        step = data.get('step', 'idle')
+        
+        # Manejar pasos específicos
+        if step == 'adding_channel':
+            await self.add_channel(update, user_id, message.text)
+            return
+        elif step.startswith('adding_button_'):
+            await self.handle_button_creation(update, data, message.text)
+            return
+        elif step == 'adding_text' and data.get('current_post'):
+            await self.handle_custom_text(update, data, message.text)
+            return
+        
+        # Manejar botones del teclado principal
+        if message.text:
+            if message.text == "📺 Mis Canales":
+                await self.manage_channels(update, context)
+                return
+            elif message.text == "🔘 Plantillas":
+                await self.show_button_templates_main(update, data)
+                return
+            elif message.text == "📊 Estado":
+                await self.status(update, context)
+                return
+            elif message.text == "❓ Ayuda":
+                await self.help_cmd(update, context)
+                return
         
         # Verificar canales
         if not data['channels']:
             keyboard = [[InlineKeyboardButton("➕ Añadir Canal", callback_data="add_channel")]]
-            await update.message.reply_text(
-                "❌ **No tienes canales configurados**\n\n"
-                "Primero necesitas añadir canales donde publicar.\n"
-                "Haz clic en el botón para empezar.",
+            await message.reply_text(
+                "❌ **Primero configura canales**\n\n"
+                "Para replicar publicaciones necesitas canales destino.\n"
+                "Añade al menos un canal donde tengas permisos de administrador.",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode=ParseMode.MARKDOWN
             )
             return
         
-        # Crear nueva publicación
-        data['current_post'] = MediaPost()
-        data['step'] = 'creating'
+        # AQUÍ ES LA MAGIA: Crear publicación desde mensaje
+        forwarded_post = ForwardedPost(message)
+        data['current_post'] = forwarded_post
+        data['step'] = 'editing'
         
+        # Determinar tipo de contenido
+        content_type = "📝 Texto"
+        if forwarded_post.media:
+            media_type = forwarded_post.media[0]['type']
+            content_icons = {
+                'photo': '📸 Imagen',
+                'video': '🎥 Video', 
+                'animation': '🎭 GIF',
+                'audio': '🎵 Audio',
+                'voice': '🎤 Voz',
+                'document': '📄 Documento',
+                'sticker': '😀 Sticker'
+            }
+            content_type = content_icons.get(media_type, '📎 Media')
+        
+        # Mostrar menú de edición
         keyboard = [
-            [InlineKeyboardButton("📝 Añadir Texto", callback_data="add_text"),
+            [InlineKeyboardButton("🔘 Añadir Botones", callback_data="manage_buttons")],
+            [InlineKeyboardButton("✏️ Editar Texto", callback_data="edit_text"),
              InlineKeyboardButton("🎯 Seleccionar Canales", callback_data="select_channels")],
-            [InlineKeyboardButton("🔘 Gestionar Botones", callback_data="manage_buttons")],
+            [InlineKeyboardButton("📋 Usar Plantilla", callback_data="button_templates")],
             [InlineKeyboardButton("👀 Vista Previa", callback_data="preview"),
-             InlineKeyboardButton("📤 Publicar", callback_data="publish")],
+             InlineKeyboardButton("📤 Replicar", callback_data="publish")],
             [InlineKeyboardButton("❌ Cancelar", callback_data="cancel")]
         ]
         
-        await update.message.reply_text(
-            f"🎯 **Nueva Publicación con Botones**\n\n"
-            f"📺 Canales disponibles: **{len(data['channels'])}**\n"
-            f"🔘 Botones: **0**\n"
-            f"📋 Estado: **Creando**\n\n"
-            f"**Siguiente paso:** Añade contenido y botones",
+        # Texto de confirmación
+        preview_text = forwarded_post.text[:100] + "..." if len(forwarded_post.text) > 100 else forwarded_post.text
+        
+        confirmation_text = f"✅ **Publicación Capturada**\n\n"
+        confirmation_text += f"📂 **Tipo:** {content_type}\n"
+        confirmation_text += f"📏 **Longitud:** {len(forwarded_post.text)} caracteres\n"
+        confirmation_text += f"📅 **Origen:** {forwarded_post.forward_from}\n"
+        confirmation_text += f"📺 **Canales disponibles:** {len(data['channels'])}\n\n"
+        
+        if preview_text:
+            confirmation_text += f"**Vista previa:**\n_{preview_text}_\n\n"
+        
+        confirmation_text += f"🔘 **¿Qué quieres hacer?**"
+        
+        await message.reply_text(
+            confirmation_text,
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.MARKDOWN
         )
@@ -269,7 +388,7 @@ class TelegramBot:
             if data.get('current_post'):
                 data['current_post'].button_layout = layout
                 await query.edit_message_text(
-                    f"✅ **Layout actualizado**: {layout}",
+                    f"✅ **Layout actualizado**: {layout.title()}",
                     parse_mode=ParseMode.MARKDOWN
                 )
         elif callback_data.startswith("template_"):
@@ -281,7 +400,7 @@ class TelegramBot:
                 data['current_post'].remove_button(btn_index)
                 await self.show_button_management(query, data)
         
-        # Callbacks adicionales para botones
+        # Callbacks para creación de botones
         elif callback_data == "add_url_button":
             data['step'] = 'adding_button_text'
             await query.edit_message_text(
@@ -291,24 +410,8 @@ class TelegramBot:
                 "• `🛒 Comprar Ahora`\n"
                 "• `📞 Contactar`\n"
                 "• `📖 Leer Más`\n\n"
-                "Para cancelar, usa /cancelar"
-            )
-        
-        elif callback_data == "add_whatsapp_button":
-            await query.edit_message_text(
-                "📞 **Botón de WhatsApp**\n\n"
-                "Envía el número en formato:\n"
-                "`https://wa.me/1234567890`\n\n"
-                "El bot creará un botón automáticamente."
-            )
-        
-        elif callback_data == "add_telegram_button":
-            await query.edit_message_text(
-                "📺 **Botón de Telegram**\n\n"
-                "Envía el enlace del canal/grupo:\n"
-                "• `https://t.me/mi_canal`\n"
-                "• `@mi_canal`\n\n"
-                "El bot creará el botón automáticamente."
+                "Para cancelar, usa /cancelar",
+                parse_mode=ParseMode.MARKDOWN
             )
         
         elif callback_data == "button_templates":
@@ -317,20 +420,14 @@ class TelegramBot:
         elif callback_data == "back_to_post":
             await self.show_post_menu(query, data)
         
-        elif callback_data == "new_post_quick":
-            # Redirigir a crear nueva publicación
-            data['current_post'] = MediaPost()
-            data['step'] = 'creating'
-            await self.show_post_menu(query, data)
-        
-        # Resto de callbacks existentes
+        # Callbacks principales
         elif callback_data == "add_channel":
             data['step'] = 'adding_channel'
             await query.edit_message_text(
                 """➕ **Añadir Canal**
 
 **Instrucciones:**
-1️⃣ Añade el bot como administrador
+1️⃣ Añade el bot como administrador del canal
 2️⃣ Otorga permisos de publicación  
 3️⃣ Envía el identificador del canal
 
@@ -358,13 +455,14 @@ class TelegramBot:
                     data['current_post'].target_channels.add(ch_id)
                 await self.show_channel_selection(query, data)
         
-        elif callback_data == "add_text":
+        elif callback_data == "edit_text":
             data['step'] = 'adding_text'
+            current_text = data['current_post'].text if data.get('current_post') else ""
             await query.edit_message_text(
-                "✍️ **Escribir Texto**\n\n"
-                "📝 Envía el texto para la publicación.\n"
-                "✨ Puedes usar formato **negrita**, *cursiva*\n\n"
-                "Para cancelar, usa /cancelar"
+                f"✏️ **Editar Texto**\n\n"
+                f"📝 **Texto actual:**\n_{current_text}_\n\n"
+                f"Envía el nuevo texto o usa /cancelar para mantener el actual",
+                parse_mode=ParseMode.MARKDOWN
             )
         
         elif callback_data == "preview":
@@ -376,7 +474,34 @@ class TelegramBot:
         elif callback_data == "cancel":
             data['current_post'] = None
             data['step'] = 'idle'
-            await query.edit_message_text("❌ **Publicación cancelada**")
+            await query.edit_message_text(
+                "❌ **Replicación cancelada**\n\n"
+                "🔄 Puedes reenviar otra publicación cuando quieras"
+            )
+    
+    async def handle_custom_text(self, update, data, text):
+        """Maneja texto personalizado para la publicación"""
+        if len(text) > 4096:
+            await update.message.reply_text(
+                f"❌ **Texto muy largo** ({len(text)}/4096 caracteres)"
+            )
+            return
+        
+        data['current_post'].text = text
+        data['step'] = 'editing'
+        
+        keyboard = [
+            [InlineKeyboardButton("🔘 Añadir Botones", callback_data="manage_buttons")],
+            [InlineKeyboardButton("👀 Vista Previa", callback_data="preview"),
+             InlineKeyboardButton("📤 Replicar", callback_data="publish")]
+        ]
+        
+        await update.message.reply_text(
+            f"✅ **Texto actualizado** ({len(text)} caracteres)\n\n"
+            f"💡 **Siguiente:** Añade botones para mayor interacción",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN
+        )
     
     async def show_button_management(self, query, data):
         """Muestra el menú de gestión de botones"""
@@ -387,7 +512,8 @@ class TelegramBot:
         
         text = f"🔘 **Gestión de Botones**\n\n"
         text += f"📊 **Botones actuales:** {len(post.buttons)}\n"
-        text += f"📐 **Layout:** {post.button_layout}\n\n"
+        text += f"📐 **Layout:** {post.button_layout.title()}\n"
+        text += f"📺 **Canales seleccionados:** {len(post.target_channels)}\n\n"
         
         if post.buttons:
             text += "**Botones configurados:**\n"
@@ -404,7 +530,10 @@ class TelegramBot:
         if post.buttons:
             keyboard.insert(1, [InlineKeyboardButton("🗑️ Quitar Botón", callback_data="remove_button")])
         
-        keyboard.append([InlineKeyboardButton("⬅️ Volver", callback_data="back_to_post")])
+        keyboard.extend([
+            [InlineKeyboardButton("👀 Vista Previa", callback_data="preview")],
+            [InlineKeyboardButton("⬅️ Volver", callback_data="back_to_post")]
+        ])
         
         await query.edit_message_text(
             text,
@@ -458,7 +587,7 @@ class TelegramBot:
         keyboard = []
         for i, button in enumerate(post.buttons):
             keyboard.append([InlineKeyboardButton(
-                f"🗑️ {button.text[:20]}...",
+                f"🗑️ {button.text[:25]}...",
                 callback_data=f"remove_btn_{i}"
             )])
         
@@ -476,16 +605,21 @@ class TelegramBot:
             await query.edit_message_text("❌ No hay publicación activa")
             return
         
-        text = "👀 **Vista Previa**\n\n"
+        text = "👀 **Vista Previa de Replicación**\n\n"
+        
+        # Info del contenido
+        if post.media:
+            media_type = post.media[0]['type']
+            content_icons = {
+                'photo': '📸 Imagen', 'video': '🎥 Video', 'animation': '🎭 GIF',
+                'audio': '🎵 Audio', 'voice': '🎤 Voz', 'document': '📄 Documento',
+                'sticker': '😀 Sticker'
+            }
+            text += f"📂 **Contenido:** {content_icons.get(media_type, '📎 Media')}\n"
         
         if post.text:
-            text += f"📝 **Texto:**\n{post.text[:200]}"
-            if len(post.text) > 200:
-                text += "..."
-            text += "\n\n"
-        
-        if post.media:
-            text += f"🎭 **Media:** {len(post.media)} archivo(s)\n\n"
+            preview_text = post.text[:150] + "..." if len(post.text) > 150 else post.text
+            text += f"📝 **Texto:** _{preview_text}_\n\n"
         
         if post.buttons:
             text += f"🔘 **Botones:** {len(post.buttons)} ({post.button_layout})\n"
@@ -494,28 +628,29 @@ class TelegramBot:
                 text += f"{i}. {icon} {button.text}\n"
             text += "\n"
         
-        if post.target_channels:
-            text += f"🎯 **Canales:** {len(post.target_channels)} seleccionados\n"
+        text += f"🎯 **Canales destino:** {len(post.target_channels)} seleccionados\n"
+        text += f"📅 **Origen:** {post.forward_from}\n\n"
         
-        # Mostrar cómo se verían los botones
+        # Mostrar preview de botones si existen
         preview_keyboard = post.get_inline_keyboard()
         
         control_keyboard = [
-            [InlineKeyboardButton("🔘 Gestionar Botones", callback_data="manage_buttons")],
-            [InlineKeyboardButton("📤 Publicar", callback_data="publish"), 
+            [InlineKeyboardButton("🔘 Gestionar Botones", callback_data="manage_buttons"),
+             InlineKeyboardButton("🎯 Canales", callback_data="select_channels")],
+            [InlineKeyboardButton("📤 Replicar Ahora", callback_data="publish"), 
              InlineKeyboardButton("❌ Cancelar", callback_data="cancel")]
         ]
         
         await query.edit_message_text(
-            text + "\n**⬇️ Vista previa de botones:**",
+            text + "**⬇️ Así se verá la publicación:**",
             reply_markup=InlineKeyboardMarkup(control_keyboard),
             parse_mode=ParseMode.MARKDOWN
         )
         
-        # Enviar mensaje adicional con preview de botones
+        # Enviar preview real si hay botones
         if preview_keyboard:
             await query.message.reply_text(
-                "📝 **Así se verá tu publicación:**\n\n" + (post.text or "Tu contenido aquí"),
+                post.text or "📢 Tu contenido replicado",
                 reply_markup=preview_keyboard,
                 parse_mode=ParseMode.MARKDOWN
             )
@@ -545,14 +680,14 @@ class TelegramBot:
             )
         
         await query.edit_message_text(
-            f"✅ **Plantilla aplicada: {template_name}**\n\n"
+            f"✅ **Plantilla aplicada: {template_name.title()}**\n\n"
             f"📊 Botones añadidos: {len(post.buttons)}\n\n"
             f"Puedes editarlos individualmente si necesitas.",
             parse_mode=ParseMode.MARKDOWN
         )
     
     async def publish_post(self, query, user_id):
-        """Publica la publicación con botones"""
+        """Publica/replica la publicación con botones"""
         data = self.get_user_data(user_id)
         post = data.get('current_post')
         
@@ -569,12 +704,12 @@ class TelegramBot:
             return
         
         # Mostrar progreso
-        await query.edit_message_text("🚀 **Publicando con botones...**\n\n⏳ Enviando a los canales...")
+        await query.edit_message_text("🚀 **Replicando con botones...**\n\n⏳ Enviando a los canales...")
         
         # Generar teclado de botones
         reply_markup = post.get_inline_keyboard()
         
-        # Publicar
+        # Replicar en cada canal
         results = []
         success_count = 0
         
@@ -583,321 +718,108 @@ class TelegramBot:
                 channel_info = data['channels'][ch_id]
                 channel_name = channel_info.get('title', 'Canal')
                 
-                # Enviar contenido con botones
+                # Enviar contenido con botones según el tipo
                 if post.media:
                     media_item = post.media[0]
-                    if media_item['type'] == 'photo':
+                    media_type = media_item['type']
+                    file_id = media_item['file_id']
+                    
+                    if media_type == 'photo':
                         await self.app.bot.send_photo(
                             chat_id=ch_id,
-                            photo=media_item['file_id'],
+                            photo=file_id,
                             caption=post.text or "",
                             reply_markup=reply_markup,
                             parse_mode=ParseMode.MARKDOWN
                         )
-                    elif media_item['type'] == 'video':
+                    elif media_type == 'video':
                         await self.app.bot.send_video(
                             chat_id=ch_id,
-                            video=media_item['file_id'],
+                            video=file_id,
                             caption=post.text or "",
                             reply_markup=reply_markup,
                             parse_mode=ParseMode.MARKDOWN
                         )
-                    elif media_item['type'] == 'animation':
+                    elif media_type == 'animation':
                         await self.app.bot.send_animation(
                             chat_id=ch_id,
-                            animation=media_item['file_id'],
+                            animation=file_id,
                             caption=post.text or "",
                             reply_markup=reply_markup,
                             parse_mode=ParseMode.MARKDOWN
                         )
-                    elif media_item['type'] == 'audio':
+                    elif media_type == 'audio':
                         await self.app.bot.send_audio(
                             chat_id=ch_id,
-                            audio=media_item['file_id'],
+                            audio=file_id,
                             caption=post.text or "",
                             reply_markup=reply_markup,
                             parse_mode=ParseMode.MARKDOWN
                         )
-                    elif media_item['type'] == 'voice':
+                    elif media_type == 'voice':
                         await self.app.bot.send_voice(
                             chat_id=ch_id,
-                            voice=media_item['file_id'],
+                            voice=file_id,
                             caption=post.text or "",
                             reply_markup=reply_markup,
                             parse_mode=ParseMode.MARKDOWN
                         )
-                    elif media_item['type'] == 'document':
+                    elif media_type == 'document':
                         await self.app.bot.send_document(
                             chat_id=ch_id,
-                            document=media_item['file_id'],
+                            document=file_id,
                             caption=post.text or "",
                             reply_markup=reply_markup,
                             parse_mode=ParseMode.MARKDOWN
                         )
+                    elif media_type == 'sticker':
+                        # Los stickers no pueden tener caption, enviamos texto separado si hay botones
+                        await self.app.bot.send_sticker(
+                            chat_id=ch_id,
+                            sticker=file_id
+                        )
+                        if post.text or reply_markup:
+                            await self.app.bot.send_message(
+                                chat_id=ch_id,
+                                text=post.text or "📢 Contenido replicado",
+                                reply_markup=reply_markup,
+                                parse_mode=ParseMode.MARKDOWN
+                            )
                 else:
                     # Solo texto con botones
                     await self.app.bot.send_message(
                         chat_id=ch_id,
-                        text=post.text or "📢 Publicación",
+                        text=post.text or "📢 Contenido replicado",
                         reply_markup=reply_markup,
                         parse_mode=ParseMode.MARKDOWN
                     )
                 
-                results.append(f"✅ **{channel_name}** (con {len(post.buttons)} botones)")
+                results.append(f"✅ **{channel_name}**")
                 success_count += 1
                 
             except Exception as e:
                 results.append(f"❌ **{channel_name}**: Error")
-                logger.error(f"Error publicando en {ch_id}: {e}")
+                logger.error(f"Error replicando en {ch_id}: {e}")
         
         # Mostrar resultados
-        result_text = f"📊 **Resultados de Publicación**\n\n"
+        result_text = f"📊 **Resultados de Replicación**\n\n"
         result_text += f"✅ **Exitosas:** {success_count}/{len(post.target_channels)}\n"
-        result_text += f"🔘 **Botones por post:** {len(post.buttons)}\n"
-        result_text += f"📐 **Layout:** {post.button_layout}\n\n"
-        result_text += "**Detalle:**\n" + "\n".join(results[:8])
+        result_text += f"🔘 **Con botones:** {len(post.buttons)}\n"
+        result_text += f"📐 **Layout:** {post.button_layout.title()}\n"
+        result_text += f"📅 **Origen:** {post.forward_from}\n\n"
+        result_text += "**Detalle:**\n" + "\n".join(results[:10])
+        
+        if len(results) > 10:
+            result_text += f"\n... y {len(results) - 10} más"
         
         # Limpiar datos
         data['current_post'] = None
         data['step'] = 'idle'
         
-        await query.edit_message_text(result_text, parse_mode=ParseMode.MARKDOWN)
-    
-    async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja texto y comandos especiales"""
-        user_id = update.effective_user.id
-        data = self.get_user_data(user_id)
-        text = update.message.text
+        keyboard = [[InlineKeyboardButton("🔄 Replicar Otra", callback_data="new_replication")]]
         
-        # Botones del teclado principal
-        if text == "📝 Nueva Publicación":
-            await self.new_post(update, context)
-            return
-        elif text == "🔘 Plantillas de Botones":
-            await self.show_button_templates(update, data)
-            return
-        elif text == "📺 Mis Canales":
-            await self.manage_channels(update, context)
-            return
-        elif text == "❓ Ayuda":
-            await self.help_cmd(update, context)
-            return
-        
-        # Manejar pasos específicos
-        step = data.get('step', 'idle')
-        
-        if step == 'adding_channel':
-            await self.add_channel(update, user_id, text)
-            return
-        
-        if step == 'adding_text' and data.get('current_post'):
-            if len(text) > 4096:
-                await update.message.reply_text(
-                    f"❌ **Texto muy largo** ({len(text)}/4096 caracteres)"
-                )
-                return
-            
-            data['current_post'].text = text
-            data['step'] = 'creating'
-            
-            keyboard = [
-                [InlineKeyboardButton("🔘 Añadir Botones", callback_data="manage_buttons")],
-                [InlineKeyboardButton("👀 Vista Previa", callback_data="preview")]
-            ]
-            
-            await update.message.reply_text(
-                f"📝 **Texto añadido** ({len(text)} caracteres)\n\n"
-                f"💡 **Siguiente:** Añade botones interactivos",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode=ParseMode.MARKDOWN
-            )
-        
-        elif step.startswith('adding_button_'):
-            # Manejar la creación de botones personalizados
-            await self.handle_button_creation(update, data, text)
-        
-        else:
-            await update.message.reply_text("💡 Usa los botones del menú principal")
-    
-    async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja fotos"""
-        user_id = update.effective_user.id
-        data = self.get_user_data(user_id)
-        
-        if data.get('current_post'):
-            photo = update.message.photo[-1]
-            data['current_post'].add_media(photo.file_id, 'photo')
-            
-            caption = update.message.caption
-            if caption and not data['current_post'].text:
-                data['current_post'].text = caption
-            
-            keyboard = [
-                [InlineKeyboardButton("🔘 Añadir Botones", callback_data="manage_buttons")],
-                [InlineKeyboardButton("👀 Vista Previa", callback_data="preview")]
-            ]
-            
-            await update.message.reply_text(
-                f"📸 **Imagen añadida**\n\n"
-                f"💡 **Sugerencia:** Añade botones para mayor interacción",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode=ParseMode.MARKDOWN
-            )
-        else:
-            await update.message.reply_text("💡 **Usa /nueva para crear una publicación primero**")
-    
-    async def handle_video(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja videos"""
-        user_id = update.effective_user.id
-        data = self.get_user_data(user_id)
-        
-        if data.get('current_post'):
-            video = update.message.video
-            data['current_post'].add_media(video.file_id, 'video')
-            
-            caption = update.message.caption
-            if caption and not data['current_post'].text:
-                data['current_post'].text = caption
-            
-            keyboard = [
-                [InlineKeyboardButton("🔘 Añadir Botones", callback_data="manage_buttons")],
-                [InlineKeyboardButton("👀 Vista Previa", callback_data="preview")]
-            ]
-            
-            await update.message.reply_text(
-                f"🎥 **Video añadido**\n\n"
-                f"💡 **Tip:** Los videos con botones tienen más engagement",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode=ParseMode.MARKDOWN
-            )
-        else:
-            await update.message.reply_text("💡 **Usa /nueva para crear una publicación primero**")
-    
-    async def handle_animation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja GIFs/animaciones"""
-        user_id = update.effective_user.id
-        data = self.get_user_data(user_id)
-        
-        if data.get('current_post'):
-            animation = update.message.animation
-            data['current_post'].add_media(animation.file_id, 'animation')
-            
-            caption = update.message.caption
-            if caption and not data['current_post'].text:
-                data['current_post'].text = caption
-            
-            keyboard = [
-                [InlineKeyboardButton("🔘 Añadir Botones", callback_data="manage_buttons")],
-                [InlineKeyboardButton("👀 Vista Previa", callback_data="preview")]
-            ]
-            
-            await update.message.reply_text(
-                f"🎭 **GIF/Animación añadida**\n\n"
-                f"💡 **Tip:** Los GIFs con botones son muy virales",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode=ParseMode.MARKDOWN
-            )
-        else:
-            await update.message.reply_text("💡 **Usa /nueva para crear una publicación primero**")
-
-    async def handle_audio(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja archivos de audio"""
-        user_id = update.effective_user.id
-        data = self.get_user_data(user_id)
-        
-        if data.get('current_post'):
-            audio = update.message.audio
-            data['current_post'].add_media(audio.file_id, 'audio')
-            
-            keyboard = [
-                [InlineKeyboardButton("🔘 Añadir Botones", callback_data="manage_buttons")],
-                [InlineKeyboardButton("👀 Vista Previa", callback_data="preview")]
-            ]
-            
-            await update.message.reply_text(
-                f"🎵 **Audio añadido**\n\n"
-                f"💡 **Idea:** Añade botones para streaming o descarga",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode=ParseMode.MARKDOWN
-            )
-        else:
-            await update.message.reply_text("💡 **Usa /nueva para crear una publicación primero**")
-
-    async def handle_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja mensajes de voz"""
-        user_id = update.effective_user.id
-        data = self.get_user_data(user_id)
-        
-        if data.get('current_post'):
-            voice = update.message.voice
-            data['current_post'].add_media(voice.file_id, 'voice')
-            
-            keyboard = [
-                [InlineKeyboardButton("🔘 Añadir Botones", callback_data="manage_buttons")],
-                [InlineKeyboardButton("👀 Vista Previa", callback_data="preview")]
-            ]
-            
-            await update.message.reply_text(
-                f"🎤 **Mensaje de voz añadido**\n\n"
-                f"💡 **Sugerencia:** Perfecto para podcasts con botones",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode=ParseMode.MARKDOWN
-            )
-        else:
-            await update.message.reply_text("💡 **Usa /nueva para crear una publicación primero**")
-
-    async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja documentos/archivos"""
-        user_id = update.effective_user.id
-        data = self.get_user_data(user_id)
-        
-        if data.get('current_post'):
-            document = update.message.document
-            data['current_post'].add_media(document.file_id, 'document')
-            
-            caption = update.message.caption
-            if caption and not data['current_post'].text:
-                data['current_post'].text = caption
-            
-            keyboard = [
-                [InlineKeyboardButton("🔘 Añadir Botones", callback_data="manage_buttons")],
-                [InlineKeyboardButton("👀 Vista Previa", callback_data="preview")]
-            ]
-            
-            file_name = document.file_name or "archivo"
-            await update.message.reply_text(
-                f"📄 **Documento añadido**\n\n"
-                f"📁 Archivo: `{file_name}`\n"
-                f"💡 **Idea:** Añade botones de descarga o más info",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode=ParseMode.MARKDOWN
-            )
-        else:
-            await update.message.reply_text("💡 **Usa /nueva para crear una publicación primero**")
-    
-    async def show_button_templates(self, update, data):
-        """Muestra plantillas de botones disponibles"""
-        templates = data.get('button_templates', {})
-        
-        text = "📋 **Plantillas de Botones**\n\n"
-        
-        for name, buttons in templates.items():
-            text += f"**{name.title()}:**\n"
-            for btn in buttons[:2]:  # Mostrar solo los primeros 2
-                text += f"• {btn['text']}\n"
-            if len(buttons) > 2:
-                text += f"• ... y {len(buttons) - 2} más\n"
-            text += "\n"
-        
-        keyboard = []
-        for template_name in templates.keys():
-            keyboard.append([InlineKeyboardButton(
-                f"📋 {template_name.title()}",
-                callback_data=f"template_{template_name}"
-            )])
-        
-        await update.message.reply_text(
-            text,
+        await query.edit_message_text(
+            result_text, 
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.MARKDOWN
         )
@@ -920,21 +842,21 @@ class TelegramBot:
                 f"Envía la URL completa:\n"
                 f"• https://ejemplo.com\n"
                 f"• https://wa.me/1234567890\n"
-                f"• https://t.me/canal"
+                f"• https://t.me/canal",
+                parse_mode=ParseMode.MARKDOWN
             )
         
         elif step == 'adding_button_url':
             # Crear el botón completo
             button_text = data.get('temp_button_text', 'Botón')
             
-            # Validar URL
-            if not (text.startswith('http') or text.startswith('https') or text.startswith('tg:')):
+            # Validar URL básica
+            if not (text.startswith('http') or text.startswith('https') or text.startswith('tg:') or text.startswith('mailto:')):
                 await update.message.reply_text(
                     "❌ **URL inválida**\n\n"
                     "La URL debe empezar con:\n"
-                    "• `https://`\n"
-                    "• `http://`\n"
-                    "• `tg://`"
+                    "• `https://` • `http://`\n"
+                    "• `tg://` • `mailto:`"
                 )
                 return
             
@@ -942,13 +864,13 @@ class TelegramBot:
             post.add_button(button_text, url=text, button_type='url')
             
             # Limpiar datos temporales
-            data['step'] = 'creating'
+            data['step'] = 'editing'
             data.pop('temp_button_text', None)
             
             keyboard = [
                 [InlineKeyboardButton("➕ Otro Botón", callback_data="add_button")],
                 [InlineKeyboardButton("👀 Vista Previa", callback_data="preview")],
-                [InlineKeyboardButton("📤 Publicar", callback_data="publish")]
+                [InlineKeyboardButton("📤 Replicar", callback_data="publish")]
             ]
             
             await update.message.reply_text(
@@ -976,18 +898,18 @@ class TelegramBot:
         
         keyboard.extend([
             [InlineKeyboardButton("🔘 Gestionar Botones", callback_data="manage_buttons")],
-            [InlineKeyboardButton("👀 Vista Previa", callback_data="preview")],
-            [InlineKeyboardButton("📤 Publicar", callback_data="publish")]
+            [InlineKeyboardButton("👀 Vista Previa", callback_data="preview"),
+             InlineKeyboardButton("📤 Replicar", callback_data="publish")]
         ])
         
         post = data.get('current_post')
         button_info = f"🔘 Botones: **{len(post.buttons)}**" if post else ""
         
-        text = f"🎯 **Seleccionar Canales**\n\n" \
+        text = f"🎯 **Seleccionar Canales Destino**\n\n" \
                f"✅ Seleccionados: **{selected_count}**\n" \
                f"📺 Disponibles: **{len(data['channels'])}**\n" \
                f"{button_info}\n\n" \
-               f"Toca los canales para seleccionar"
+               f"Toca los canales donde quieres replicar"
         
         await query.edit_message_text(
             text,
@@ -1006,25 +928,30 @@ class TelegramBot:
 
 ❌ No tienes canales configurados.
 
-**Para añadir un canal:**
-1. Añade el bot como administrador
-2. Dale permisos de publicación
-3. Usa el botón para añadir"""
+**Para replicar contenido necesitas:**
+1. Añadir el bot como administrador del canal
+2. Darle permisos de publicación
+3. Registrar el canal en el bot
+
+🔄 **Una vez configurado, simplemente reenvía cualquier publicación al bot**"""
         else:
             keyboard = [
                 [InlineKeyboardButton("➕ Añadir Canal", callback_data="add_channel")],
                 [InlineKeyboardButton("🗑️ Eliminar Canal", callback_data="remove_channel")]
             ]
             
-            text = f"📺 **Tus Canales** ({len(data['channels'])})\n\n"
+            text = f"📺 **Canales Configurados** ({len(data['channels'])})\n\n"
             
-            for i, (ch_id, ch_info) in enumerate(list(data['channels'].items())[:8], 1):
+            for i, (ch_id, ch_info) in enumerate(list(data['channels'].items())[:10], 1):
                 title = ch_info.get('title', 'Canal sin nombre')
                 username = ch_info.get('username', '')
                 if username:
                     text += f"{i}. **{title}** (@{username})\n"
                 else:
                     text += f"{i}. **{title}**\n"
+                    
+            if len(data['channels']) > 10:
+                text += f"\n... y {len(data['channels']) - 10} canales más"
         
         await update.message.reply_text(
             text,
@@ -1033,7 +960,7 @@ class TelegramBot:
         )
     
     async def add_channel(self, update, user_id, channel_text):
-        """Añade un canal con validación"""
+        """Añade un canal con validación mejorada"""
         data = self.get_user_data(user_id)
         
         # Limpiar y normalizar texto
@@ -1066,14 +993,16 @@ class TelegramBot:
                     f"📢 Canal: **{chat.title}**\n\n"
                     f"**Solución:**\n"
                     f"1. Añade el bot como administrador\n"
-                    f"2. Otorga permisos de publicación"
+                    f"2. Otorga permisos de publicación\n"
+                    f"3. Intenta nuevamente"
                 )
                 return
             
             # Verificar si ya existe
             if str(chat.id) in data['channels']:
                 await update.message.reply_text(
-                    f"⚠️ **Canal ya configurado**\n\n📢 {chat.title}"
+                    f"⚠️ **Canal ya configurado**\n\n📢 {chat.title}\n\n"
+                    f"🔄 Puedes empezar a reenviar publicaciones para replicar"
                 )
                 return
             
@@ -1088,7 +1017,6 @@ class TelegramBot:
             data['step'] = 'idle'
             
             keyboard = [
-                [InlineKeyboardButton("📝 Nueva Publicación", callback_data="new_post_quick")],
                 [InlineKeyboardButton("➕ Añadir Otro Canal", callback_data="add_channel")]
             ]
             
@@ -1096,7 +1024,7 @@ class TelegramBot:
                 f"✅ **Canal añadido exitosamente**\n\n"
                 f"📢 **Nombre:** {chat.title}\n"
                 f"📊 **Total canales:** {len(data['channels'])}\n\n"
-                f"🔘 **Ahora puedes crear publicaciones con botones interactivos**",
+                f"🔄 **¡Listo!** Ahora reenvía cualquier publicación al bot y él te permitirá añadir botones y replicarla en tus canales.",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode=ParseMode.MARKDOWN
             )
@@ -1104,8 +1032,13 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Error añadiendo canal {original_text}: {e}")
             await update.message.reply_text(
-                f"❌ **Error:** {str(e)}\n\n"
-                f"🔍 Canal: `{original_text}`"
+                f"❌ **Error:** No se pudo añadir el canal\n\n"
+                f"🔍 **Verificar:**\n"
+                f"• El bot es administrador\n"
+                f"• Tiene permisos de publicación\n"
+                f"• El identificador es correcto\n\n"
+                f"Formato enviado: `{original_text}`",
+                parse_mode=ParseMode.MARKDOWN
             )
     
     async def show_button_template_selection(self, query, data):
@@ -1130,6 +1063,8 @@ class TelegramBot:
                 text += f"• ... y {len(buttons) - 2} más\n"
             text += "\n"
         
+        text += "💡 **Tip:** Las plantillas reemplazan botones existentes"
+        
         await query.edit_message_text(
             text,
             reply_markup=InlineKeyboardMarkup(keyboard),
@@ -1144,23 +1079,55 @@ class TelegramBot:
             return
         
         keyboard = [
-            [InlineKeyboardButton("📝 Añadir Texto", callback_data="add_text"),
-             InlineKeyboardButton("🎯 Seleccionar Canales", callback_data="select_channels")],
             [InlineKeyboardButton("🔘 Gestionar Botones", callback_data="manage_buttons")],
+            [InlineKeyboardButton("✏️ Editar Texto", callback_data="edit_text"),
+             InlineKeyboardButton("🎯 Seleccionar Canales", callback_data="select_channels")],
+            [InlineKeyboardButton("📋 Usar Plantilla", callback_data="button_templates")],
             [InlineKeyboardButton("👀 Vista Previa", callback_data="preview"),
-             InlineKeyboardButton("📤 Publicar", callback_data="publish")],
+             InlineKeyboardButton("📤 Replicar", callback_data="publish")],
             [InlineKeyboardButton("❌ Cancelar", callback_data="cancel")]
         ]
         
-        text = f"🎯 **Nueva Publicación con Botones**\n\n"
-        text += f"📺 Canales disponibles: **{len(data['channels'])}**\n"
-        text += f"🔘 Botones: **{len(post.buttons)}**\n"
-        text += f"📋 Estado: **Creando**\n\n"
-        text += f"**Siguiente paso:** Añade contenido y botones"
+        # Info del contenido
+        content_type = "📝 Texto"
+        if post.media:
+            media_type = post.media[0]['type']
+            content_icons = {
+                'photo': '📸 Imagen', 'video': '🎥 Video', 'animation': '🎭 GIF',
+                'audio': '🎵 Audio', 'voice': '🎤 Voz', 'document': '📄 Documento',
+                'sticker': '😀 Sticker'
+            }
+            content_type = content_icons.get(media_type, '📎 Media')
+        
+        text = f"🔄 **Replicación de Contenido**\n\n"
+        text += f"📂 **Tipo:** {content_type}\n"
+        text += f"📺 **Canales disponibles:** {len(data['channels'])}\n"
+        text += f"🔘 **Botones:** {len(post.buttons)}\n"
+        text += f"🎯 **Seleccionados:** {len(post.target_channels)}\n\n"
+        text += f"**¿Qué quieres hacer?**"
         
         await query.edit_message_text(
             text,
             reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN
+        )
+    
+    async def show_button_templates_main(self, update, data):
+        """Muestra plantillas de botones desde el menú principal"""
+        templates = data.get('button_templates', {})
+        
+        text = "📋 **Plantillas de Botones Disponibles**\n\n"
+        
+        for name, buttons in templates.items():
+            text += f"**{name.title()}:**\n"
+            for btn in buttons:
+                text += f"• {btn['text']}\n"
+            text += "\n"
+        
+        text += "💡 **Uso:** Reenvía una publicación al bot y selecciona 'Usar Plantilla'"
+        
+        await update.message.reply_text(
+            text,
             parse_mode=ParseMode.MARKDOWN
         )
     
@@ -1169,18 +1136,23 @@ class TelegramBot:
         user_id = update.effective_user.id
         data = self.get_user_data(user_id)
         
-        text = f"📊 **Estado del Bot**\n\n"
-        text += f"👤 Usuario: {update.effective_user.first_name}\n"
-        text += f"📺 Canales: **{len(data['channels'])}**\n"
-        text += f"🔄 Estado: **{data['step']}**\n"
+        text = f"📊 **Estado del Bot Replicador**\n\n"
+        text += f"👤 **Usuario:** {update.effective_user.first_name}\n"
+        text += f"📺 **Canales configurados:** {len(data['channels'])}\n"
+        text += f"🔄 **Estado actual:** {data['step']}\n"
+        text += f"🕐 **Última actividad:** {data['last_activity'].strftime('%H:%M')}\n\n"
         
         if data.get('current_post'):
             post = data['current_post']
-            text += f"\n📝 **Publicación Actual:**\n"
-            text += f"• Texto: {'✅' if post.text else '❌'}\n"
-            text += f"• Media: **{len(post.media)}** archivos\n"
-            text += f"• Botones: **{len(post.buttons)}** ({post.button_layout})\n"
-            text += f"• Canales: **{len(post.target_channels)}** seleccionados\n"
+            text += f"📝 **Publicación en Proceso:**\n"
+            text += f"• **Contenido:** {'✅' if post.text or post.media else '❌'}\n"
+            text += f"• **Botones:** {len(post.buttons)} ({post.button_layout})\n"
+            text += f"• **Canales destino:** {len(post.target_channels)} seleccionados\n"
+            text += f"• **Origen:** {post.forward_from}\n\n"
+            
+            text += f"📤 **Listo para replicar:** {'✅' if post.target_channels and post.has_content() else '❌'}"
+        else:
+            text += f"💡 **Tip:** Reenvía cualquier publicación para empezar a replicar con botones"
         
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
     
@@ -1193,60 +1165,71 @@ class TelegramBot:
         data['step'] = 'idle'
         data.pop('temp_button_text', None)
         
-        await update.message.reply_text("❌ **Acción cancelada**\n\nPuedes empezar de nuevo cuando quieras.")
+        await update.message.reply_text(
+            "❌ **Replicación cancelada**\n\n"
+            "🔄 Puedes reenviar otra publicación cuando quieras."
+        )
     
     async def help_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Comando de ayuda mejorado con botones"""
-        text = """🚀 **Bot Publicador Multi-Canal con Botones**
+        """Comando de ayuda mejorado"""
+        text = """🚀 **Bot Replicador con Botones Interactivos**
+
+**🔄 CÓMO FUNCIONA:**
+1. **Reenvía** cualquier publicación al bot
+2. El bot la **captura automáticamente**
+3. **Añade botones** interactivos
+4. **Selecciona canales** destino
+5. **¡Replica con un clic!**
 
 **📋 COMANDOS:**
-• `/nueva` - Crear publicación con botones
-• `/canales` - Gestionar canales
+• `/canales` - Gestionar canales destino
 • `/estado` - Ver estado actual
 • `/help` - Esta ayuda
 
 **🔘 TIPOS DE BOTONES:**
-• **🔗 Links externos** - Sitios web, tiendas
-• **📞 WhatsApp** - Contacto directo
+• **🔗 Links externos** - Sitios web, tiendas online
+• **📞 WhatsApp** - Contacto directo (wa.me)
 • **📺 Telegram** - Canales y grupos
+• **📧 Email** - Contacto por correo
 • **🛒 E-commerce** - Botones de compra
-• **📊 Encuestas** - Interacción con usuarios
 
-**📋 PLANTILLAS DISPONIBLES:**
+**📋 PLANTILLAS INCLUIDAS:**
 • **E-commerce** - Comprar, Contactar, Valorar
-• **Social** - Like, Comentar, Compartir
-• **Educativo** - Ver Curso, Inscribirse
+• **Social** - Me Gusta, Comentar, Compartir  
 • **Noticias** - Leer Más, Suscribirse
+• **Educativo** - Ver Curso, Inscribirse
+• **Contacto** - WhatsApp, Email, Web
 
 **🎯 EJEMPLOS DE USO:**
+
 ```
-📝 "Nueva oferta disponible!"
-🔘 [🛒 Comprar Ahora] [📞 WhatsApp]
-
-🎥 Video tutorial de programación
-🔘 [📚 Ver Curso Completo]
-🔘 [💬 Grupo de Estudiantes]
-
-📰 Noticia importante
-🔘 [📖 Leer Artículo] [🔔 Suscribirse]
+🛒 Reenvías: "Nueva oferta 50% OFF"
+➕ Añades: [🛒 Comprar] [📞 WhatsApp]
+📤 Replicas en 5 canales simultáneamente
 ```
 
-**⚙️ LAYOUTS DE BOTONES:**
-• **Horizontal** - Botones en fila (máx 3)
-• **Vertical** - Un botón por fila  
+```
+📰 Reenvías: Noticia importante
+➕ Añades: [📖 Leer Más] [🔔 Suscribirse]  
+📤 Se publica con botones en todos tus canales
+```
+
+**⚙️ LAYOUTS DISPONIBLES:**
+• **Horizontal** - Botones en fila (1-3 por fila)
+• **Vertical** - Un botón por fila
 • **Grid** - Cuadrícula 2x2
 
-**💡 CONSEJOS:**
-• Los botones aumentan el engagement
-• Usa CTAs (Call To Action) claros
-• Máximo 8 botones por mensaje
-• Combina diferentes tipos de botones
+**💡 VENTAJAS:**
+✅ **Rápido** - Sin crear desde cero
+✅ **Consistente** - Mismo contenido, múltiples canales
+✅ **Interactivo** - Botones aumentan engagement
+✅ **Profesional** - Aspecto uniforme
 
-**🚀 ¡Crea contenido interactivo que genere acción!**"""
+**🚀 ¡Convierte cualquier contenido en publicación interactiva!**"""
         
         keyboard = [
-            [KeyboardButton("📝 Nueva Publicación"), KeyboardButton("📺 Mis Canales")],
-            [KeyboardButton("🔘 Plantillas de Botones"), KeyboardButton("📊 Estado")]
+            [KeyboardButton("📺 Mis Canales"), KeyboardButton("🔘 Plantillas")],
+            [KeyboardButton("📊 Estado"), KeyboardButton("❓ Ayuda")]
         ]
         
         await update.message.reply_text(
@@ -1255,7 +1238,7 @@ class TelegramBot:
             parse_mode=ParseMode.MARKDOWN
         )
 
-# Resto del código (servidor web, etc.) se mantiene igual
+# Resto del código del servidor web
 async def webhook_handler(request: Request) -> Response:
     """Maneja webhooks de Telegram"""
     try:
@@ -1268,7 +1251,7 @@ async def webhook_handler(request: Request) -> Response:
         return Response(text="ERROR", status=500)
 
 async def health_check(request: Request) -> Response:
-    """Health check"""
+    """Health check mejorado"""
     try:
         bot_info = await bot.app.bot.get_me()
         return Response(
@@ -1276,7 +1259,8 @@ async def health_check(request: Request) -> Response:
                 "status": "OK",
                 "bot_username": bot_info.username,
                 "active_users": len(user_data),
-                "features": ["multi_channel", "buttons", "multimedia"],
+                "features": ["forward_replication", "interactive_buttons", "multi_channel"],
+                "version": "2.0 - Forwarder Edition",
                 "timestamp": datetime.now().isoformat()
             }),
             content_type="application/json"
@@ -1319,10 +1303,10 @@ def main():
         
         app = loop.run_until_complete(init_app())
         
-        logger.info(f"🚀 Bot con Botones Interactivos INICIADO")
+        logger.info(f"🚀 Bot Replicador con Botones INICIADO")
         logger.info(f"🌐 Puerto: {PORT}")
         logger.info(f"🔗 Webhook: {WEBHOOK_URL}")
-        logger.info(f"🔘 Funcionalidades: Multi-canal + Botones")
+        logger.info(f"🔄 Funcionalidad: Reenvío + Botones + Multi-canal")
         
         web.run_app(app, host='0.0.0.0', port=PORT)
         
